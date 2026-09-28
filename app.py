@@ -5,22 +5,10 @@ import json
 
 st.set_page_config(page_title="Golf Auto-Caddie Coach", page_icon="⛳", layout="wide")
 
+st.sidebar.title("⛳ Auto-Caddie Menu")
+page = st.sidebar.radio("Navigation", ["📊 Master Analytics Dashboard", "🧮 WHS & HNA Calculator"])
 
-@st.cache_resource
-def get_db():
-    return duckdb.connect("golf.duckdb", read_only=False)
-
-conn = get_db()
-
-st.title("⛳ Auto-Caddie Coach")
-
-# --- MASTER NAVIGATION TABS ---
-tab1, tab2 = st.tabs(["📊 Full Analytics Dashboard", "🧮 WHS & HNA Handicap Calculator"])
-
-# ==========================================
-# TAB 1: ALL YOUR ORIGINAL DASHBOARD & STATS
-# ==========================================
-with tab1:
+if page == "📊 Master Analytics Dashboard":
     import streamlit as st
     import duckdb
     import json
@@ -721,15 +709,11 @@ with tab1:
                 })
             
             st.dataframe(pd.DataFrame(matrix_rows), hide_index=True, use_container_width=True)
-
-# ==========================================
-# TAB 2: WHS & HNA HANDICAP CALCULATOR
-# ==========================================
-with tab2:
-    st.header("⛳ WHS & HNA Handicap Calculator")
+elif page == "🧮 WHS & HNA Calculator":
+    st.header("🧮 WHS & HNA Handicap Calculator")
     
-    # Dynamic WHS Calculation from DuckDB
     try:
+        conn = duckdb.connect("golf.duckdb", read_only=False)
         rows = conn.execute("SELECT id, start_time, course_name, raw_json FROM scorecards WHERE raw_json IS NOT NULL").fetchall()
         
         COURSE_RATINGS = {
@@ -790,30 +774,31 @@ with tab2:
             calc_index = round(best_8['Differential'].mean(), 1)
         else:
             calc_index = 8.3
-            best_8 = pd.DataFrame()
-            recent_20 = pd.DataFrame()
+            best_8, recent_20 = pd.DataFrame(), pd.DataFrame()
     except Exception:
         calc_index = 8.3
-        best_8 = pd.DataFrame()
-        recent_20 = pd.DataFrame()
+        best_8, recent_20 = pd.DataFrame(), pd.DataFrame()
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Calculated WHS Index", f"{calc_index}", delta="Single Digit")
-    with col2:
-        if 'recent_20' in locals() and not recent_20.empty:
-            st.metric("Recent 20 Avg Score", f"{recent_20['gross'].mean():.1f}")
-        else:
-            st.metric("Recent 20 Avg Score", "84.0")
-    with col3:
-        st.metric("18-Hole Rounds Analyzed", f"{len(df_vh) if 'df_vh' in locals() and not df_vh.empty else 143}")
+    c1, c2, c3 = st.columns(3)
+    with c1: st.metric("Calculated WHS Index", f"{calc_index}", delta="Official 8.3")
+    with c2: st.metric("Recent 20 Avg Score", f"{recent_20['gross'].mean():.1f}" if ('recent_20' in locals() and not recent_20.empty) else "84.0")
+    with c3: st.metric("18-Hole Rounds Logged", f"{len(df_vh)}" if ('df_vh' in locals() and not df_vh.empty) else "143")
 
     st.markdown("---")
-    st.subheader("🧮 HNA Course Handicap Calculator")
+    st.subheader("🔎 Online Golf Course Search")
+    
+    search_q = st.text_input("Type course name to look up online:", placeholder="e.g. Durban Country Club, Fancourt, Pinnacle Point...")
+    if search_q:
+        import urllib.parse
+        encoded_q = urllib.parse.quote(f"{search_q} golf course rating slope rating par HNA GolfRSA South Africa")
+        st.link_button(f"🔍 Search Google / GolfRSA for {search_q}", f"https://www.google.com/search?q={encoded_q}")
+
+    st.markdown("---")
+    st.subheader("🧮 Course Playing Handicap Calculator")
     
     handicap_index = st.number_input("Your Current Handicap Index", min_value=-10.0, max_value=54.0, value=float(calc_index), step=0.1)
 
-    COURSES = {
+    PRESETS = {
         "Custom / Standard Tee (CR: 72.0 | SR: 113)": {"cr": 72.0, "sr": 113, "par": 72},
         "Parkview Golf Club": {"cr": 71.8, "sr": 128, "par": 72},
         "The Wanderers Golf Club": {"cr": 72.2, "sr": 131, "par": 71},
@@ -835,31 +820,26 @@ with tab2:
         "CCJ - Woodmead": {"cr": 72.5, "sr": 130, "par": 72},
     }
 
-    selected_course = st.selectbox("Select Course Preset", list(COURSES.keys()))
-    default_cr = COURSES[selected_course]["cr"]
-    default_sr = COURSES[selected_course]["sr"]
-    default_par = COURSES[selected_course]["par"]
+    selected_preset = st.selectbox("Select Course Preset", list(PRESETS.keys()))
+    col_cr, col_sr, col_p = st.columns(3)
+    with col_cr: cr_val = st.number_input("Course Rating (CR)", value=float(PRESETS[selected_preset]["cr"]), step=0.1)
+    with col_sr: sr_val = st.number_input("Slope Rating (SR)", value=int(PRESETS[selected_preset]["sr"]), step=1)
+    with col_p: par_val = st.number_input("Par", value=int(PRESETS[selected_preset]["par"]), step=1)
 
-    c1, c2, c3 = st.columns(3)
-    with c1: course_rating = st.number_input("Course Rating (CR)", min_value=50.0, max_value=85.0, value=float(default_cr), step=0.1)
-    with c2: slope_rating = st.number_input("Slope Rating (SR)", min_value=55, max_value=155, value=int(default_sr), step=1)
-    with c3: par_rating = st.number_input("Par", min_value=60, max_value=75, value=int(default_par), step=1)
-
-    course_handicap_raw = handicap_index * (slope_rating / 113.0) + (course_rating - par_rating)
-    course_handicap = round(course_handicap_raw)
+    ch_raw = handicap_index * (sr_val / 113.0) + (cr_val - par_val)
+    ch = round(ch_raw)
 
     st.markdown("---")
-    st.metric(label="Target Playing Handicap", value=f"{course_handicap} Strokes", delta=f"Exact: {course_handicap_raw:.2f}")
+    st.metric(label="Target Playing Handicap", value=f"{ch} Strokes", delta=f"Exact: {ch_raw:.2f}")
 
-    if course_handicap > 0:
-        st.info(f"💡 You receive **1 stroke** on Stroke Index 1 through {min(course_handicap, 18)}.")
-        if course_handicap > 18:
-            st.info(f"💡 You receive **2 strokes** on Stroke Index 1 through {course_handicap - 18}.")
-    elif course_handicap == 0:
+    if ch > 0:
+        st.info(f"💡 You receive **1 stroke** on Stroke Index 1 through {min(ch, 18)}.")
+    elif ch == 0:
         st.info("💡 Playing off scratch (0 strokes).")
     else:
-        st.info(f"💡 Plus handicap: You give back {abs(course_handicap)} strokes.")
+        st.info(f"💡 Plus handicap: You give back {abs(ch)} strokes.")
 
     if 'best_8' in locals() and not best_8.empty:
         with st.expander("📊 View Your 8 Best Counting Rounds Used For Calculation"):
             st.dataframe(best_8[['date', 'course', 'gross', 'par', 'CR', 'SR', 'Differential']], use_container_width=True)
+
