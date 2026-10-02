@@ -2,10 +2,8 @@ import streamlit as st
 import duckdb
 import pandas as pd
 import json
-import urllib.parse
 
 st.set_page_config(page_title="Golf Auto-Caddie Coach", page_icon="⛳", layout="wide")
-
 st.sidebar.title("⛳ Auto-Caddie Menu")
 page = st.sidebar.radio("Navigation", ["📊 Master Analytics Dashboard", "🧮 WHS & HNA Calculator", "⛳ Pre-Round Caddie"])
 
@@ -713,31 +711,15 @@ if page == "📊 Master Analytics Dashboard":
 elif page == "🧮 WHS & HNA Calculator":
 
     st.header("🧮 WHS & HNA Handicap Calculator")
-    
     calc_index = 8.3
     best_8 = pd.DataFrame()
     recent_20 = pd.DataFrame()
     df_vh = pd.DataFrame()
-
     try:
         conn = duckdb.connect("golf.duckdb", read_only=False)
         rows = conn.execute("SELECT id, start_time, course_name, raw_json FROM scorecards WHERE raw_json IS NOT NULL").fetchall()
         
-        COURSE_RATINGS = {
-            'simbithi': {'cr': 60.0, 'sr': 110.0, 'par': 60},
-            'wanderers': {'cr': 72.2, 'sr': 131.0, 'par': 71},
-            'vaal de grace': {'cr': 72.8, 'sr': 133.0, 'par': 72},
-            'glendower': {'cr': 73.5, 'sr': 135.0, 'par': 72},
-            'huddle park': {'cr': 70.8, 'sr': 122.0, 'par': 72},
-            'parkview': {'cr': 71.8, 'sr': 128.0, 'par': 72},
-            'lake golf club': {'cr': 71.5, 'sr': 125.0, 'par': 72},
-            'blue valley': {'cr': 73.0, 'sr': 132.0, 'par': 72},
-            'steyn city': {'cr': 72.1, 'sr': 135.0, 'par': 72},
-            'royal johannesburg': {'cr': 73.8, 'sr': 136.0, 'par': 72},
-            'bryanston': {'cr': 71.9, 'sr': 129.0, 'par': 72},
-            'ccj': {'cr': 72.5, 'sr': 130.0, 'par': 72},
-            'randpark': {'cr': 73.1, 'sr': 133.0, 'par': 72},
-        }
+        COURSE_RATINGS = {'simbithi': {'cr': 60.0, 'sr': 110.0, 'par': 60}, 'wanderers': {'cr': 72.2, 'sr': 131.0, 'par': 71}, 'vaal de grace': {'cr': 72.8, 'sr': 133.0, 'par': 72}, 'glendower': {'cr': 73.5, 'sr': 135.0, 'par': 72}, 'huddle park': {'cr': 70.8, 'sr': 122.0, 'par': 72}, 'parkview': {'cr': 71.8, 'sr': 128.0, 'par': 72}, 'lake golf club': {'cr': 71.5, 'sr': 125.0, 'par': 72}, 'blue valley': {'cr': 73.0, 'sr': 132.0, 'par': 72}, 'steyn city': {'cr': 72.1, 'sr': 135.0, 'par': 72}, 'royal johannesburg': {'cr': 73.8, 'sr': 136.0, 'par': 72}, 'bryanston': {'cr': 71.9, 'sr': 129.0, 'par': 72}, 'ccj': {'cr': 72.5, 'sr': 130.0, 'par': 72}, 'randpark': {'cr': 73.1, 'sr': 133.0, 'par': 72}}
 
         def get_c_info(cname):
             c_lower = cname.lower() if cname else ''
@@ -750,27 +732,14 @@ elif page == "🧮 WHS & HNA Calculator":
             if not raw_json: continue
             try:
                 data = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-                sc_d_list = data.get('scorecardDetails', [])
-                if not sc_d_list: continue
-                sc_d = sc_d_list[0]
-                sc = sc_d.get('scorecard', {})
-                
+                sc = data.get('scorecardDetails', [{}])[0].get('scorecard', {})
                 if sc.get('holesCompleted', 0) == 18:
                     strokes = sc.get('strokes') or sc.get('totalStrokes')
                     if strokes and float(strokes) > 50:
                         c_name = course_name or 'Unknown Course'
                         cr, sr, par = get_c_info(c_name)
                         gross = float(strokes)
-                        diff = (113.0 / sr) * (gross - cr)
-                        valid_rounds.append({
-                            'date': str(start_time)[:10],
-                            'course': c_name,
-                            'gross': gross,
-                            'par': par,
-                            'CR': cr,
-                            'SR': sr,
-                            'Differential': round(diff, 2)
-                        })
+                        valid_rounds.append({'date': str(start_time)[:10], 'course': c_name, 'gross': gross, 'par': par, 'CR': cr, 'SR': sr, 'Differential': round((113.0 / sr) * (gross - cr), 2)})
             except Exception: pass
 
         df_vh = pd.DataFrame(valid_rounds)
@@ -786,84 +755,6 @@ elif page == "🧮 WHS & HNA Calculator":
     with c2: st.metric("Recent 20 Avg Score", f"{recent_20['gross'].mean():.1f}" if not recent_20.empty else "84.0")
     with c3: st.metric("18-Hole Rounds Logged", f"{len(df_vh)}" if not df_vh.empty else "143")
 
-    st.markdown("---")
-    st.subheader("🔎 Search & Auto-Populate Course (White Tees Default)")
-
-    WHITE_TEE_COURSES = {
-        "Custom / Manual Entry": {"cr": 72.0, "sr": 113, "par": 72},
-        "Parkview Golf Club (White Tees)": {"cr": 71.8, "sr": 128, "par": 72},
-        "The Wanderers Golf Club (White Tees)": {"cr": 72.2, "sr": 131, "par": 71},
-        "Vaal de Grace Golf Estate (White Tees)": {"cr": 72.8, "sr": 133, "par": 72},
-        "Glendower Golf Club (White Tees)": {"cr": 73.5, "sr": 135, "par": 72},
-        "Huddle Park Golf Club - Blue Course (White Tees)": {"cr": 70.8, "sr": 122, "par": 72},
-        "Blue Valley Golf Estate (White Tees)": {"cr": 73.0, "sr": 132, "par": 72},
-        "Randpark Golf Club - Firethorn (White Tees)": {"cr": 73.1, "sr": 133, "par": 72},
-        "Randpark Golf Club - Bushwillow (White Tees)": {"cr": 71.2, "sr": 126, "par": 72},
-        "Steyn City Golf Course (White Tees)": {"cr": 72.1, "sr": 135, "par": 72},
-        "Royal Johannesburg - West Course (White Tees)": {"cr": 71.5, "sr": 128, "par": 72},
-        "Royal Johannesburg - East Course (White Tees)": {"cr": 73.8, "sr": 136, "par": 72},
-        "Houghton Golf Club (White Tees)": {"cr": 72.8, "sr": 132, "par": 72},
-        "Bryanston Country Club (White Tees)": {"cr": 71.9, "sr": 129, "par": 72},
-        "CCJ Woodmead (White Tees)": {"cr": 72.5, "sr": 130, "par": 72},
-        "CCJ Rocklands (White Tees)": {"cr": 72.8, "sr": 131, "par": 72},
-        "Durban Country Club (White Tees)": {"cr": 73.2, "sr": 134, "par": 72},
-        "Pearl Valley Golf Estate (White Tees)": {"cr": 74.1, "sr": 138, "par": 72},
-        "Blair Atholl Golf Estate (White Tees)": {"cr": 76.2, "sr": 148, "par": 72},
-        "Leopard Creek CC (White Tees)": {"cr": 74.8, "sr": 140, "par": 72},
-        "Fancourt - Outeniqua (White Tees)": {"cr": 72.4, "sr": 131, "par": 72},
-        "Fancourt - Montagu (White Tees)": {"cr": 73.6, "sr": 137, "par": 72},
-        "Pinnacle Point Estate (White Tees)": {"cr": 73.5, "sr": 136, "par": 72},
-        "Pecanwood Golf & Country Club (White Tees)": {"cr": 72.0, "sr": 127, "par": 72},
-        "Serengeti Golf Estate (White Tees)": {"cr": 73.4, "sr": 138, "par": 72},
-        "Ebotse Links (White Tees)": {"cr": 72.9, "sr": 134, "par": 72},
-    }
-
-    search_term = st.text_input("🔍 Type Course Name to Auto-Fill White Tees:", placeholder="e.g. Parkview, Wanderers, Fancourt, Pinnacle Point...")
-
-    if search_term:
-        matching_courses = [c for c in WHITE_TEE_COURSES.keys() if search_term.lower() in c.lower()]
-        if not matching_courses:
-            matching_courses = ["Custom / Manual Entry"]
-    else:
-        matching_courses = list(WHITE_TEE_COURSES.keys())
-
-    selected_course = st.selectbox("Select Matched Course:", matching_courses)
-
-    if search_term:
-        encoded_q = urllib.parse.quote(f"{search_term} golf course White Tees rating slope par HNA GolfRSA South Africa")
-        st.link_button(f"🌐 Look Up White Tees Rating for '{search_term}' on GolfRSA / Google", f"https://www.google.com/search?q={encoded_q}")
-
-    st.markdown("---")
-    st.subheader("🧮 Playing Handicap Calculation")
-    
-    handicap_index = st.number_input("Your Current Handicap Index", min_value=-10.0, max_value=54.0, value=float(calc_index), step=0.1)
-
-    auto_cr = WHITE_TEE_COURSES.get(selected_course, {"cr": 72.0})["cr"]
-    auto_sr = WHITE_TEE_COURSES.get(selected_course, {"sr": 113})["sr"]
-    auto_par = WHITE_TEE_COURSES.get(selected_course, {"par": 72})["par"]
-
-    col_cr, col_sr, col_p = st.columns(3)
-    with col_cr: cr_val = st.number_input("Course Rating (CR - White Tees)", value=float(auto_cr), step=0.1)
-    with col_sr: sr_val = st.number_input("Slope Rating (SR - White Tees)", value=int(auto_sr), step=1)
-    with col_p: par_val = st.number_input("Par", value=int(auto_par), step=1)
-
-    ch_raw = handicap_index * (sr_val / 113.0) + (cr_val - par_val)
-    ch = round(ch_raw)
-
-    st.markdown("---")
-    st.metric(label="Target Playing Handicap (White Tees)", value=f"{ch} Strokes", delta=f"Exact: {ch_raw:.2f}")
-
-    if ch > 0:
-        st.info(f"💡 You receive **1 stroke** on Stroke Index 1 through {min(ch, 18)}.")
-    elif ch == 0:
-        st.info("💡 Playing off scratch (0 strokes).")
-    else:
-        st.info(f"💡 Plus handicap: You give back {abs(ch)} strokes.")
-
-    if not best_8.empty:
-        with st.expander("📊 View Your 8 Best Counting Rounds Used For Calculation"):
-            st.dataframe(best_8[['date', 'course', 'gross', 'par', 'CR', 'SR', 'Differential']], use_container_width=True)
-
 elif page == "⛳ Pre-Round Caddie":
 
     st.header("⛳ Pre-Round Caddie & Course Strategy")
@@ -871,67 +762,60 @@ elif page == "⛳ Pre-Round Caddie":
     
     try:
         conn = duckdb.connect("golf.duckdb", read_only=False)
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS course_blueprints (
-                course_name TEXT PRIMARY KEY,
-                holes JSON
-            )
-        ''')
+        conn.execute("CREATE TABLE IF NOT EXISTS course_blueprints (course_name TEXT PRIMARY KEY, holes JSON)")
     except Exception:
         pass
         
-    search_c = st.text_input("🔍 Search Course Name to build Game Plan:", placeholder="e.g. Parkview, Wanderers, Randpark...")
-    
-    PRELOADED = {
-        "parkview": [
-            {"hole": 1, "par": 4, "si": 4, "yardage": 365}, {"hole": 2, "par": 5, "si": 14, "yardage": 475},
-            {"hole": 3, "par": 4, "si": 2, "yardage": 410}, {"hole": 4, "par": 3, "si": 16, "yardage": 165},
-            {"hole": 5, "par": 4, "si": 8, "yardage": 380}, {"hole": 6, "par": 4, "si": 6, "yardage": 395},
-            {"hole": 7, "par": 5, "si": 12, "yardage": 510}, {"hole": 8, "par": 3, "si": 18, "yardage": 140},
-            {"hole": 9, "par": 4, "si": 10, "yardage": 350}, {"hole": 10, "par": 4, "si": 1, "yardage": 420},
-            {"hole": 11, "par": 4, "si": 5, "yardage": 390}, {"hole": 12, "par": 5, "si": 11, "yardage": 490},
-            {"hole": 13, "par": 3, "si": 15, "yardage": 155}, {"hole": 14, "par": 4, "si": 3, "yardage": 405},
-            {"hole": 15, "par": 3, "si": 17, "yardage": 170}, {"hole": 16, "par": 5, "si": 9, "yardage": 500},
-            {"hole": 17, "par": 4, "si": 7, "yardage": 385}, {"hole": 18, "par": 4, "si": 13, "yardage": 360}
-        ],
-        "wanderers": [
-            {"hole": 1, "par": 4, "si": 3, "yardage": 375}, {"hole": 2, "par": 4, "si": 11, "yardage": 350},
-            {"hole": 3, "par": 3, "si": 17, "yardage": 145}, {"hole": 4, "par": 4, "si": 1, "yardage": 425},
-            {"hole": 5, "par": 5, "si": 9, "yardage": 485}, {"hole": 6, "par": 4, "si": 7, "yardage": 380},
-            {"hole": 7, "par": 3, "si": 15, "yardage": 160}, {"hole": 8, "par": 4, "si": 5, "yardage": 395},
-            {"hole": 9, "par": 4, "si": 13, "yardage": 340}, {"hole": 10, "par": 4, "si": 2, "yardage": 415},
-            {"hole": 11, "par": 4, "si": 10, "yardage": 365}, {"hole": 12, "par": 3, "si": 18, "yardage": 135},
-            {"hole": 13, "par": 5, "si": 12, "yardage": 495}, {"hole": 14, "par": 4, "si": 4, "yardage": 400},
-            {"hole": 15, "par": 4, "si": 8, "yardage": 385}, {"hole": 16, "par": 3, "si": 16, "yardage": 165},
-            {"hole": 17, "par": 5, "si": 14, "yardage": 480}, {"hole": 18, "par": 4, "si": 6, "yardage": 390}
-        ]
-    }
+    search_c = st.text_input("🔍 Search Course Name to build Game Plan:", placeholder="e.g. Houghton, Parkview, Vaal de Grace...")
     
     if search_c:
         c_lower = search_c.lower()
-        
         cached = conn.execute("SELECT holes FROM course_blueprints WHERE LOWER(course_name) = ?", (c_lower,)).fetchone()
         
         blueprint = None
         if cached:
             blueprint = json.loads(cached[0])
-            st.success(f"✅ Loaded '{search_c}' Blueprint from offline DuckDB cache!")
+            st.success(f"✅ Loaded '{search_c}' Blueprint from cache!")
         else:
-            matched_key = next((k for k in PRELOADED.keys() if k in c_lower), None)
-            if matched_key:
-                blueprint = PRELOADED[matched_key]
-                conn.execute("INSERT INTO course_blueprints VALUES (?, ?)", (c_lower, json.dumps(blueprint)))
-                st.success(f"🌐 Fetched '{search_c}' scorecard online and cached to database permanently!")
-            else:
-                encoded_c = urllib.parse.quote(f"{search_c} golf course scorecard stroke index yardage White Tees")
-                st.warning(f"Course scorecard for '{search_c}' is not pre-cached yet.")
-                st.link_button(f"🌐 Search Scorecard & Stroke Index for '{search_c}'", f"https://www.google.com/search?q={encoded_c}")
+            # 🌟 DYNAMIC GARMIN EXTRACTION 🌟
+            historical = conn.execute("SELECT raw_json FROM scorecards WHERE LOWER(course_name) LIKE ? AND raw_json IS NOT NULL LIMIT 1", (f"%{c_lower}%",)).fetchone()
+            
+            if historical:
+                try:
+                    raw_json = historical[0]
+                    data = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                    sc = data.get('scorecardDetails', [{}])[0].get('scorecard', {})
+                    
+                    si_str = sc.get('courseHandicapStr', '')
+                    si_list = [int(si_str[i:i+2]) for i in range(0, 36, 2)] if len(si_str) == 36 else [18]*18
+                    
+                    hole_data = {}
+                    for snap in data.get('courseSnapshots', []):
+                        for h in snap.get('holeList', snap.get('holes', [])):
+                            if h.get('holeNumber'):
+                                hole_data[h['holeNumber']] = {"par": h.get('par'), "length": h.get('length', 0)}
+                    
+                    bp = []
+                    for i in range(1, 19):
+                        if i in hole_data:
+                            bp.append({"hole": i, "par": hole_data[i]["par"], "si": si_list[i-1], "yardage": hole_data[i]["length"]})
+                    
+                    if len(bp) == 18:
+                        blueprint = bp
+                        conn.execute("INSERT INTO course_blueprints VALUES (?, ?)", (c_lower, json.dumps(blueprint)))
+                        st.success(f"⚡ Automatically extracted '{search_c}' blueprint directly from your Garmin history!")
+                except Exception:
+                    pass
+            
+        if not blueprint:
+            import urllib.parse
+            encoded_c = urllib.parse.quote(f"{search_c} golf course scorecard stroke index yardage White Tees")
+            st.warning(f"Course '{search_c}' not found in your Garmin history.")
+            st.link_button(f"🌐 Search Scorecard manually on Google", f"https://www.google.com/search?q={encoded_c}")
 
         if blueprint:
             st.markdown("---")
             st.subheader("🎯 The 8.3 Handicap Game Plan")
-            
-            st.info("💡 **Your Index: 8.3** | Playing Handicap: ~10 Strokes | **Target: 82 Gross**")
             
             df_bp = pd.DataFrame(blueprint)
             df_bp['Net Par Target'] = df_bp.apply(lambda r: r['par'] + 1 if r['si'] <= 10 else r['par'], axis=1)
@@ -940,23 +824,18 @@ elif page == "⛳ Pre-Round Caddie":
             scoring_holes = df_bp[df_bp['si'] >= 15]['hole'].tolist()
             
             c1, c2 = st.columns(2)
-            with c1:
-                st.error(f"🚨 **Danger Holes (Play for Bogey / Net Par):** Holes {', '.join(map(str, danger_holes))}")
-            with c2:
-                st.success(f"🔥 **Scoring Holes (Green Light):** Holes {', '.join(map(str, scoring_holes))}")
+            with c1: st.error(f"🚨 **Danger Holes (Play for Net Par):** Holes {', '.join(map(str, danger_holes))}")
+            with c2: st.success(f"🔥 **Scoring Holes (Green Light):** Holes {', '.join(map(str, scoring_holes))}")
                 
             st.markdown("### ⛳ Hole-by-Hole Bag Mapping")
             for h in blueprint:
                 h_num, h_par, h_yd, h_si = h['hole'], h['par'], h['yardage'], h['si']
-                
                 with st.expander(f"Hole {h_num} - Par {h_par} | {h_yd}m | Stroke Index {h_si}"):
                     if h_par == 3:
                         st.write(f"**Target:** {h_yd}m carry. Use **7-Iron** (155m) or **6-Iron** (165m). Aim center of green.")
                     elif h_par == 4:
-                        if h_si <= 4:
-                            st.write(f"**Strategy (Danger Hole):** 3-Wood off tee to guarantee fairway ({h_yd - 220}m left). Mid-iron approach, aim safe side. Accept 5 (Net Par).")
-                        else:
-                            st.write(f"**Strategy:** Driver off tee. Leaves scoring wedge (~100m-130m). Attack the pin.")
+                        if h_si <= 4: st.write(f"**Strategy (Danger Hole):** 3-Wood off tee to guarantee fairway ({max(0, h_yd - 220)}m left). Mid-iron approach, aim safe side. Accept 5 (Net Par).")
+                        else: st.write(f"**Strategy:** Driver off tee. Leaves scoring wedge (~100m-130m). Attack the pin.")
                     elif h_par == 5:
                         st.write(f"**Strategy (3-Shot Hole):** Driver off tee. Lay up with 7-Iron to preferred 85m wedge yardage. Do not force 2nd shot over hazards.")
                         
