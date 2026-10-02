@@ -40,7 +40,7 @@ if page == "⛳ Pre-Round Caddie":
                     model = genai.GenerativeModel('gemini-3.5-flash')
                     
                     prompt = f"""
-                    Find the official 18-hole golf scorecard for '{search_c}' (White/Mens tees).
+                    IMPORTANT: Assume the golf course is located in South Africa unless a specific country or international city is mentioned. Find the official 18-hole golf scorecard for '{search_c}' (White/Mens tees).
                     Return ONLY a JSON array of 18 objects with keys: hole (1-18), par, si (stroke index), yardage.
                     Example format: [{{"hole": 1, "par": 4, "si": 7, "yardage": 380}}, ...]
                     DO NOT output markdown formatting outside the raw JSON string.
