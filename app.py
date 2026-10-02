@@ -14,25 +14,33 @@ if page == "⛳ Pre-Round Caddie":
     
     conn = duckdb.connect("golf.duckdb", read_only=True)
     
-    search_c = st.text_input("🔍 Search Course Name (e.g. Parkview, Houghton, Wanderers):", placeholder="Type course name...")
+    search_c = st.text_input("🔍 Search Course Name (e.g. Parkview, Houghton, Blair Atholl):", placeholder="Enter course name...")
     
     if search_c:
-        c_clean = search_c.strip().lower()
+        raw_query = search_c.strip()
+        c_clean = raw_query.lower()
         
-        # 1. Query Database (43 Historical Courses)
-        cached = conn.execute("SELECT holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (f"%{c_clean}%",)).fetchone()
+        # 1. Word-level matching for Database (e.g. 'parkview' matches 'Parkview Golf Club')
+        first_word = c_clean.split()[0]
+        cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (f"%{first_word}%%)).fetchone() if len(first_word) > 2 else None
+        
+        if not cached:
+            cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (f"%{c_clean}%",)).fetchone()
         
         blueprint = None
         if cached:
-            blueprint = json.loads(cached[0])
-            st.success(f"✅ Loaded scorecard blueprint from database!")
+            matched_name, holes_json = cached
+            blueprint = json.loads(holes_json)
+            st.success(f"✅
         else:
-            # 2. Gemini AI Fallback for unplayed courses
-            st.info(f"🔍 Searching Gemini AI Engine for '{search_c}'...")
+            # 2. Append 'South Africa' to Gemini search if no location is specified
+            ai_search_term = raw_query if any(loc in c_clean for loc in ['south africa', 'sa', 'usa', 'uk', 'scotland', 'australia']) else f"{raw_query}, South Africa"
+            
+            st.info(f"🔍 Searching Gemini AI Engine for '{ai_search_term}'...")
             api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
             
             if not api_key:
-                st.warning("⚠️ Gemini API Key missing in Streamlit Secrets. Please add GEMINI_API_KEY to test new courses.")
+                st.error("⚠️ Gemini API Key missing in Streamlit Secrets.")
             else:
                 try:
                     import google.generativeai as genai
@@ -40,16 +48,16 @@ if page == "⛳ Pre-Round Caddie":
                     model = genai.GenerativeModel('gemini-3.5-flash')
                     
                     prompt = f"""
-                    IMPORTANT: Assume the golf course is located in South Africa unless a specific country or international city is mentioned. Find the official 18-hole golf scorecard for '{search_c}' (White/Mens tees).
+                    Find the official 18-hole golf scorecard for '{ai_search_term}' (White/Mens tees).
                     Return ONLY a JSON array of 18 objects with keys: hole (1-18), par, si (stroke index), yardage.
                     Example format: [{{"hole": 1, "par": 4, "si": 7, "yardage": 380}}, ...]
-                    DO NOT output markdown formatting outside the raw JSON string.
+                    DO NOT output markdown text outside JSON.
                     """
                     
                     response = model.generate_content(prompt)
-                    raw_text = response.text.replace('```json', '').replace('```', '').strip()
+                    raw_text = response.text.replace('', '').strip()
                     blueprint = json.loads(raw_text)
-                    st.success(f"🤖 Gemini AI fetched scorecard online!")
+                    st.success(f"🤖
                 except Exception as e:
                     st.error(f"❌ Error retrieving scorecard: {e}")
 
