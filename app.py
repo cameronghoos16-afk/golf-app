@@ -21,11 +21,17 @@ if page == "⛳ Pre-Round Caddie":
         c_clean = raw_query.lower()
         
         # 1. Word-level matching for Database (e.g. 'parkview' matches 'Parkview Golf Club')
-        first_word = c_clean.split()[0]
-        cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (f"%{first_word}%%)).fetchone() if len(first_word) > 2 else None
+        words = c_clean.split()
+        first_word = words[0] if words else ""
+        
+        cached = None
+        if len(first_word) > 2:
+            param = f"%{first_word}%"
+            cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (param,)).fetchone()
         
         if not cached:
-            cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (f"%{c_clean}%",)).fetchone()
+            param = f"%{c_clean}%"
+            cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (param,)).fetchone()
         
         blueprint = None
         if cached:
