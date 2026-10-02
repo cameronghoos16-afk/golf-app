@@ -7,7 +7,7 @@ import urllib.parse
 st.set_page_config(page_title="Golf Auto-Caddie Coach", page_icon="⛳", layout="wide")
 
 st.sidebar.title("⛳ Auto-Caddie Menu")
-page = st.sidebar.radio("Navigation", ["📊 Master Analytics Dashboard", "🧮 WHS & HNA Calculator"])
+page = st.sidebar.radio("Navigation", ["📊 Master Analytics Dashboard", "🧮 WHS & HNA Calculator", "⛳ Pre-Round Caddie"])
 
 if page == "📊 Master Analytics Dashboard":
     import streamlit as st
@@ -863,4 +863,103 @@ elif page == "🧮 WHS & HNA Calculator":
     if not best_8.empty:
         with st.expander("📊 View Your 8 Best Counting Rounds Used For Calculation"):
             st.dataframe(best_8[['date', 'course', 'gross', 'par', 'CR', 'SR', 'Differential']], use_container_width=True)
+
+elif page == "⛳ Pre-Round Caddie":
+
+    st.header("⛳ Pre-Round Caddie & Course Strategy")
+    st.markdown("Plan your target holes, bag mapping, and danger zones before stepping on the 1st tee.")
+    
+    try:
+        conn = duckdb.connect("golf.duckdb", read_only=False)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS course_blueprints (
+                course_name TEXT PRIMARY KEY,
+                holes JSON
+            )
+        ''')
+    except Exception:
+        pass
+        
+    search_c = st.text_input("🔍 Search Course Name to build Game Plan:", placeholder="e.g. Parkview, Wanderers, Randpark...")
+    
+    PRELOADED = {
+        "parkview": [
+            {"hole": 1, "par": 4, "si": 4, "yardage": 365}, {"hole": 2, "par": 5, "si": 14, "yardage": 475},
+            {"hole": 3, "par": 4, "si": 2, "yardage": 410}, {"hole": 4, "par": 3, "si": 16, "yardage": 165},
+            {"hole": 5, "par": 4, "si": 8, "yardage": 380}, {"hole": 6, "par": 4, "si": 6, "yardage": 395},
+            {"hole": 7, "par": 5, "si": 12, "yardage": 510}, {"hole": 8, "par": 3, "si": 18, "yardage": 140},
+            {"hole": 9, "par": 4, "si": 10, "yardage": 350}, {"hole": 10, "par": 4, "si": 1, "yardage": 420},
+            {"hole": 11, "par": 4, "si": 5, "yardage": 390}, {"hole": 12, "par": 5, "si": 11, "yardage": 490},
+            {"hole": 13, "par": 3, "si": 15, "yardage": 155}, {"hole": 14, "par": 4, "si": 3, "yardage": 405},
+            {"hole": 15, "par": 3, "si": 17, "yardage": 170}, {"hole": 16, "par": 5, "si": 9, "yardage": 500},
+            {"hole": 17, "par": 4, "si": 7, "yardage": 385}, {"hole": 18, "par": 4, "si": 13, "yardage": 360}
+        ],
+        "wanderers": [
+            {"hole": 1, "par": 4, "si": 3, "yardage": 375}, {"hole": 2, "par": 4, "si": 11, "yardage": 350},
+            {"hole": 3, "par": 3, "si": 17, "yardage": 145}, {"hole": 4, "par": 4, "si": 1, "yardage": 425},
+            {"hole": 5, "par": 5, "si": 9, "yardage": 485}, {"hole": 6, "par": 4, "si": 7, "yardage": 380},
+            {"hole": 7, "par": 3, "si": 15, "yardage": 160}, {"hole": 8, "par": 4, "si": 5, "yardage": 395},
+            {"hole": 9, "par": 4, "si": 13, "yardage": 340}, {"hole": 10, "par": 4, "si": 2, "yardage": 415},
+            {"hole": 11, "par": 4, "si": 10, "yardage": 365}, {"hole": 12, "par": 3, "si": 18, "yardage": 135},
+            {"hole": 13, "par": 5, "si": 12, "yardage": 495}, {"hole": 14, "par": 4, "si": 4, "yardage": 400},
+            {"hole": 15, "par": 4, "si": 8, "yardage": 385}, {"hole": 16, "par": 3, "si": 16, "yardage": 165},
+            {"hole": 17, "par": 5, "si": 14, "yardage": 480}, {"hole": 18, "par": 4, "si": 6, "yardage": 390}
+        ]
+    }
+    
+    if search_c:
+        c_lower = search_c.lower()
+        
+        cached = conn.execute("SELECT holes FROM course_blueprints WHERE LOWER(course_name) = ?", (c_lower,)).fetchone()
+        
+        blueprint = None
+        if cached:
+            blueprint = json.loads(cached[0])
+            st.success(f"✅ Loaded '{search_c}' Blueprint from offline DuckDB cache!")
+        else:
+            matched_key = next((k for k in PRELOADED.keys() if k in c_lower), None)
+            if matched_key:
+                blueprint = PRELOADED[matched_key]
+                conn.execute("INSERT INTO course_blueprints VALUES (?, ?)", (c_lower, json.dumps(blueprint)))
+                st.success(f"🌐 Fetched '{search_c}' scorecard online and cached to database permanently!")
+            else:
+                encoded_c = urllib.parse.quote(f"{search_c} golf course scorecard stroke index yardage White Tees")
+                st.warning(f"Course scorecard for '{search_c}' is not pre-cached yet.")
+                st.link_button(f"🌐 Search Scorecard & Stroke Index for '{search_c}'", f"https://www.google.com/search?q={encoded_c}")
+
+        if blueprint:
+            st.markdown("---")
+            st.subheader("🎯 The 8.3 Handicap Game Plan")
+            
+            st.info("💡 **Your Index: 8.3** | Playing Handicap: ~10 Strokes | **Target: 82 Gross**")
+            
+            df_bp = pd.DataFrame(blueprint)
+            df_bp['Net Par Target'] = df_bp.apply(lambda r: r['par'] + 1 if r['si'] <= 10 else r['par'], axis=1)
+            
+            danger_holes = df_bp[df_bp['si'] <= 4]['hole'].tolist()
+            scoring_holes = df_bp[df_bp['si'] >= 15]['hole'].tolist()
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.error(f"🚨 **Danger Holes (Play for Bogey / Net Par):** Holes {', '.join(map(str, danger_holes))}")
+            with c2:
+                st.success(f"🔥 **Scoring Holes (Green Light):** Holes {', '.join(map(str, scoring_holes))}")
+                
+            st.markdown("### ⛳ Hole-by-Hole Bag Mapping")
+            for h in blueprint:
+                h_num, h_par, h_yd, h_si = h['hole'], h['par'], h['yardage'], h['si']
+                
+                with st.expander(f"Hole {h_num} - Par {h_par} | {h_yd}m | Stroke Index {h_si}"):
+                    if h_par == 3:
+                        st.write(f"**Target:** {h_yd}m carry. Use **7-Iron** (155m) or **6-Iron** (165m). Aim center of green.")
+                    elif h_par == 4:
+                        if h_si <= 4:
+                            st.write(f"**Strategy (Danger Hole):** 3-Wood off tee to guarantee fairway ({h_yd - 220}m left). Mid-iron approach, aim safe side. Accept 5 (Net Par).")
+                        else:
+                            st.write(f"**Strategy:** Driver off tee. Leaves scoring wedge (~100m-130m). Attack the pin.")
+                    elif h_par == 5:
+                        st.write(f"**Strategy (3-Shot Hole):** Driver off tee. Lay up with 7-Iron to preferred 85m wedge yardage. Do not force 2nd shot over hazards.")
+                        
+            st.markdown("---")
+            st.dataframe(df_bp[['hole', 'par', 'si', 'yardage', 'Net Par Target']].set_index('hole').T, use_container_width=True)
 
