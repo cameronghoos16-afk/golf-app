@@ -37,7 +37,7 @@ if page == "⛳ Pre-Round Caddie":
         if cached:
             matched_name, holes_json = cached
             blueprint = json.loads(holes_json)
-            st.success(f"✅
+            st.success(f"✅ Loaded **{matched_name}** from your historical database!")
         else:
             # 2. Append 'South Africa' to Gemini search if no location is specified
             ai_search_term = raw_query if any(loc in c_clean for loc in ['south africa', 'sa', 'usa', 'uk', 'scotland', 'australia']) else f"{raw_query}, South Africa"
@@ -61,9 +61,9 @@ if page == "⛳ Pre-Round Caddie":
                     """
                     
                     response = model.generate_content(prompt)
-                    raw_text = response.text.replace('', '').strip()
+                    raw_text = response.text.replace('```json', '').replace('```', '').strip()
                     blueprint = json.loads(raw_text)
-                    st.success(f"🤖
+                    st.success(f"🤖 Gemini AI successfully fetched scorecard online for {ai_search_term}!")
                 except Exception as e:
                     st.error(f"❌ Error retrieving scorecard: {e}")
 
