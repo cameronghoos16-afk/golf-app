@@ -37,7 +37,7 @@ if page == "⛳ Pre-Round Caddie":
                 try:
                     import google.generativeai as genai
                     genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-pro')
+                    model = genai.GenerativeModel('gemini-3.5-flash')
                     
                     prompt = f"""
                     Find the official 18-hole golf scorecard for '{search_c}' (White/Mens tees).
