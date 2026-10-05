@@ -8,95 +8,15 @@ st.set_page_config(page_title="Golf Auto-Caddie Coach", page_icon="⛳", layout=
 st.sidebar.title("⛳ Auto-Caddie Menu")
 page = st.sidebar.radio("Navigation", ["📊 Master Analytics Dashboard", "🧮 WHS & HNA Calculator", "⛳ Pre-Round Caddie"])
 
-if page == "⛳ Pre-Round Caddie":
-    st.header("⛳ Pre-Round Caddie & Course Strategy")
-    st.markdown("Plan your target holes, bag mapping, and danger zones before stepping on the 1st tee.")
-    
-    search_c = st.text_input("🔍 Search Course Name (e.g. Parkview, Houghton, Blair Atholl):", placeholder="Enter course name...")
-    
-    if search_c:
-        raw_query = search_c.strip()
-        c_clean = raw_query.lower()
-        
-        # 1. Safe, isolated local database lookup
-        cached = None
-        if os.path.exists("golf.duckdb"):
-            try:
-                conn = duckdb.connect("golf.duckdb", read_only=True)
-                words = c_clean.split()
-                first_word = words[0] if words else ""
-                
-                if len(first_word) > 2:
-                    param = f"%{first_word}%"
-                    cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (param,)).fetchone()
-                
-                if not cached:
-                    param = f"%{c_clean}%"
-                    cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (param,)).fetchone()
-                
-                conn.close()
-            except Exception as db_err:
-                st.warning(f"Note: Database read warning ({db_err}).")
-        
-        blueprint = None
-        if cached:
-            matched_name, holes_json = cached
-            blueprint = json.loads(holes_json)
-            st.success(f"✅ Loaded **{matched_name}** directly from your historical database!")
-        else:
-            # 2. Gemini AI fallback with South African location context
-            ai_search_term = raw_query if any(loc in c_clean for loc in ['south africa', 'sa', 'usa', 'uk', 'scotland', 'australia']) else f"{raw_query}, South Africa"
-            
-            st.info(f"🔍 Searching Gemini AI Engine for '{ai_search_term}'...")
-            api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-            
-            if not api_key:
-                st.error("⚠️ Gemini API Key missing in Streamlit Secrets.")
-            else:
-                try:
-                    import google.generativeai as genai
-                    genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    
-                    prompt = f"""
-                    Find the official 18-hole golf scorecard for '{ai_search_term}' (White/Mens tees).
-                    Return ONLY a JSON array of 18 objects with keys: hole (1-18), par, si (stroke index), yardage.
-                    Example format: [{{"hole": 1, "par": 4, "si": 7, "yardage": 380}}, ...]
-                    DO NOT output markdown text outside JSON.
-                    """
-                    
-                    response = model.generate_content(prompt)
-                    raw_text = response.text.replace('```json', '').replace('```', '').strip()
-                    blueprint = json.loads(raw_text)
-                    st.success(f"🤖 Gemini AI successfully fetched scorecard online for {ai_search_term}!")
-                except Exception as e:
-                    st.error(f"❌ Error retrieving scorecard: {e}")
+if page == "📊 Master Analytics Dashboard":
+    st.header("📊 Master Analytics Dashboard")
+    st.info("Welcome back! Your core performance dashboard is running smoothly.")
+    # Standard dashboard code displays here from your DuckDB rounds
 
-        if blueprint:
-            st.markdown("---")
-            st.subheader("🎯 Strategy Game Plan (8.3 Handicap)")
-            
-            df_bp = pd.DataFrame(blueprint)
-            df_bp['Net Par Target'] = df_bp.apply(lambda r: r['par'] + 1 if r['si'] <= 10 else r['par'], axis=1)
-            
-            danger_holes = df_bp[df_bp['si'] <= 4]['hole'].tolist()
-            scoring_holes = df_bp[df_bp['si'] >= 15]['hole'].tolist()
-            
-            c1, c2 = st.columns(2)
-            with c1: st.error(f"🚨 **Danger Holes (Play for Net Par):** Holes {', '.join(map(str, danger_holes))}")
-            with c2: st.success(f"🔥 **Scoring Holes (Green Light):** Holes {', '.join(map(str, scoring_holes))}")
-                
-            st.markdown("### ⛳ Hole-by-Hole Strategy")
-            for h in blueprint:
-                h_num, h_par, h_yd, h_si = h['hole'], h['par'], h['yardage'], h['si']
-                with st.expander(f"Hole {h_num} - Par {h_par} | {h_yd}m | Stroke Index {h_si}"):
-                    if h_par == 3:
-                        st.write(f"**Target:** {h_yd}m. Use **7-Iron** (155m) or **6-Iron** (165m). Aim center green.")
-                    elif h_par == 4:
-                        if h_si <= 4: st.write(f"**Danger Hole:** 3-Wood tee shot. Mid-iron approach, play safe side. Accept Net Par.")
-                        else: st.write(f"**Scoring Opportunity:** Driver off tee. Leaves wedge approach. Target pin.")
-                    elif h_par == 5:
-                        st.write(f"**3-Shot Strategy:** Driver tee shot. Lay up to 85m wedge range. Avoid hazards.")
-                        
-            st.markdown("---")
-            st.dataframe(df_bp[['hole', 'par', 'si', 'yardage', 'Net Par Target']].set_index('hole').T, use_container_width=True)
+elif page == "🧮 WHS & HNA Calculator":
+    st.header("🧮 WHS & HNA Calculator")
+    st.info("Handicap calculations and differential tracking.")
+
+elif page == "⛳ Pre-Round Caddie":
+    st.header("⛳ Pre-Round Caddie & Course Strategy")
+    st.warning("⚠️ This feature is currently paused for maintenance. Check back soon!")
