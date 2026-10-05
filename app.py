@@ -23,26 +23,22 @@ if page == "📊 Master Analytics Dashboard":
             conn = duckdb.connect(DB_FILE, read_only=True)
             tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
             
-            if "rounds" in tables:
-                df_rounds = conn.execute("SELECT * FROM rounds").df()
-                conn.close()
+            if tables:
+                st.success(f"📂 Found {len(tables)} table(s) in `golf.duckdb`: **{', '.join(tables)}**")
                 
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Total Logged Rounds", len(df_rounds))
-                if 'score' in df_rounds.columns:
-                    c2.metric("Avg Score", round(df_rounds['score'].mean(), 1))
-                if 'differential' in df_rounds.columns:
-                    c3.metric("Best Differential", round(df_rounds['differential'].min(), 1))
-                
-                st.subheader("Recent Rounds")
-                st.dataframe(df_rounds, use_container_width=True)
+                # Display contents of each table found in database
+                for t_name in tables:
+                    st.subheader(f"📋 Table: `{t_name}`")
+                    df_table = conn.execute(f"SELECT * FROM \"{t_name}\"").df()
+                    st.dataframe(df_table, use_container_width=True)
             else:
-                conn.close()
-                st.info("💡 `golf.duckdb` is connected, but the `rounds` table is not initialized yet.")
+                st.info("💡 `golf.duckdb` connected, but no tables were found inside.")
+            
+            conn.close()
         except Exception as e:
-            st.warning(f"Note loading dashboard database: {e}")
+            st.error(f"Error inspecting database: {e}")
     else:
-        st.info("💡 **No local database found yet.** Add rounds to your `golf.duckdb` file to view dashboard metrics.")
+        st.info("💡 No `golf.duckdb` file detected in the app directory.")
 
 # ==========================================
 # PAGE 2: WHS & HNA CALCULATOR
@@ -104,14 +100,14 @@ elif page == "⛳ Pre-Round Caddie":
             except Exception as db_err:
                 st.warning(f"Local DB query skipped: {db_err}")
         
-        # 2. AI Search Fallback if Local Search returns nothing
+        # 2. AI Search Fallback
         if not blueprint:
             ai_search_term = raw_query if any(loc in c_clean for loc in ['south africa', 'sa', 'usa', 'uk', 'scotland', 'australia']) else f"{raw_query}, South Africa"
             st.info(f"🔍 Searching Gemini AI Engine for '{ai_search_term}'...")
             
             api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
             if not api_key:
-                st.error("⚠️️ Gemini API Key missing in Streamlit Secrets.")
+                st.error("⚠️ Gemini API Key missing in Streamlit Secrets.")
             else:
                 try:
                     import google.generativeai as genai
@@ -139,6 +135,14 @@ elif page == "⛳ Pre-Round Caddie":
             
             df_bp = pd.DataFrame(blueprint)
             if 'si' in df_bp.columns and 'par' in df_bp.columns:
+                # Force string numbers to integer types safely
+                df_bp['par'] = pd.to_numeric(df_bp['par'], errors='coerce').fillna(4).astype(int)
+                df_bp['si'] = pd.to_numeric(df_bp['si'], errors='coerce').fillna(18).astype(int)
+                if 'yardage' in df_bp.columns:
+                    df_bp['yardage'] = pd.to_numeric(df_bp['yardage'], errors='coerce').fillna(0).astype(int)
+                if 'hole' in df_bp.columns:
+                    df_bp['hole'] = pd.to_numeric(df_bp['hole'], errors='coerce').fillna(0).astype(int)
+                
                 df_bp['Net Par Target'] = df_bp.apply(lambda r: r['par'] + 1 if r['si'] <= 10 else r['par'], axis=1)
                 
                 danger_holes = df_bp[df_bp['si'] <= 4]['hole'].tolist()
@@ -151,8 +155,8 @@ elif page == "⛳ Pre-Round Caddie":
                     st.success(f"🔥 **Scoring Holes (Green Light):** Holes {', '.join(map(str, scoring_holes))}")
                 
                 st.markdown("### ⛳ Hole-by-Hole Strategy")
-                for h in blueprint:
-                    h_num, h_par, h_yd, h_si = h.get('hole'), h.get('par'), h.get('yardage', '-'), h.get('si')
+                for _, h in df_bp.iterrows():
+                    h_num, h_par, h_yd, h_si = h['hole'], h['par'], h['yardage'], h['si']
                     with st.expander(f"Hole {h_num} - Par {h_par} | {h_yd}m | Stroke Index {h_si}"):
                         if h_par == 3:
                             st.write(f"**Target:** {h_yd}m. Use **7-Iron** (155m) or **6-Iron** (165m). Aim center green.")
