@@ -9,33 +9,48 @@ st.set_page_config(page_title="Golf Auto-Caddie Coach", page_icon="⛳", layout=
 DB_FILE = "golf.duckdb"
 
 st.sidebar.title("⛳ Auto-Caddie Menu")
-page = st.sidebar.radio("Navigation", ["📊 Master Analytics Dashboard", "🧮 WHS & HNA Calculator", "⛳ Pre-Round Caddie"])
+page = st.sidebar.radio(
+    "Navigation", 
+    [
+        "📊 Master Analytics Dashboard", 
+        "📝 Post-Round Scorecards & Shots",
+        "🏌️ Club Distances & Bag Stats",
+        "🧮 WHS & HNA Calculator", 
+        "⛳ Pre-Round Caddie"
+    ]
+)
+
+# Helper function to open DB cleanly
+def get_db_connection():
+    if os.path.exists(DB_FILE):
+        return duckdb.connect(DB_FILE, read_only=True)
+    return None
 
 # ==========================================
 # PAGE 1: MASTER ANALYTICS DASHBOARD
 # ==========================================
 if page == "📊 Master Analytics Dashboard":
     st.header("📊 Master Analytics Dashboard")
-    st.markdown("Track performance metrics, historical scores, and club performance.")
+    st.markdown("Overview of overall performance, historical scoring trends, and round highlights.")
 
-    if os.path.exists(DB_FILE):
+    conn = get_db_connection()
+    if conn:
         try:
-            conn = duckdb.connect(DB_FILE, read_only=True)
             tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
             
             if "scorecards" in tables:
-                join_query = """
-                SELECT 
-                    s.id AS scorecard_id,
-                    s.start_time,
-                    s.course_name,
-                    s.total_score,
-                    r.longest_shot_m
-                FROM scorecards s
-                LEFT JOIN round_insights r ON CAST(s.id AS VARCHAR) = CAST(r.scorecard_id AS VARCHAR)
-                ORDER BY s.start_time DESC
-                """
-                df_rounds = conn.execute(join_query).df()
+                df_rounds = conn.execute("""
+                    SELECT 
+                        s.id AS scorecard_id,
+                        s.start_time,
+                        s.course_name,
+                        s.total_score,
+                        r.longest_shot_m
+                    FROM scorecards s
+                    LEFT JOIN round_insights r ON CAST(s.id AS VARCHAR) = CAST(r.scorecard_id AS VARCHAR)
+                    ORDER BY s.start_time DESC
+                """).df()
+                
                 valid_scores = df_rounds[df_rounds['total_score'] > 0]
                 
                 c1, c2, c3, c4 = st.columns(4)
@@ -47,35 +62,107 @@ if page == "📊 Master Analytics Dashboard":
                     c4.metric("Longest Drive", f"{round(df_rounds['longest_shot_m'].max(), 1)}m")
                 
                 st.markdown("---")
-                st.subheader("⛳ Recent Rounds History")
-                
+                st.subheader("⛳ Recent Rounds Summary")
                 df_display = df_rounds.copy()
                 if 'start_time' in df_display.columns:
                     df_display['Date'] = pd.to_datetime(df_display['start_time']).dt.strftime('%Y-%m-%d %H:%M')
-                df_display = df_display[['Date', 'course_name', 'total_score', 'longest_shot_m']].rename(
-                    columns={
-                        'course_name': 'Course Name',
-                        'total_score': 'Total Score',
-                        'longest_shot_m': 'Longest Drive (m)'
-                    }
+                st.dataframe(
+                    df_display[['Date', 'course_name', 'total_score', 'longest_shot_m']].rename(
+                        columns={'course_name': 'Course Name', 'total_score': 'Score', 'longest_shot_m': 'Longest Drive (m)'}
+                    ),
+                    use_container_width=True
                 )
-                st.dataframe(df_display, use_container_width=True)
+            conn.close()
+        except Exception as e:
+            st.error(f"Error loading dashboard: {e}")
+
+# ==========================================
+# PAGE 2: POST-ROUND SCORECARDS & SHOT LOGS
+# ==========================================
+elif page == "📝 Post-Round Scorecards & Shots":
+    st.header("📝 Post-Round Scorecard Details & Shot Tracking")
+    
+    conn = get_db_connection()
+    if conn:
+        try:
+            tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
             
-            if "garmin_official_clubs" in tables:
+            # 1. Full Scorecards Table
+            if "scorecards" in tables:
+                st.subheader("📋 Logged Scorecards")
+                df_sc = conn.execute("SELECT id, start_time, course_name, total_par, total_score FROM scorecards ORDER BY start_time DESC").df()
+                st.dataframe(df_sc, use_container_width=True)
+            
+            # 2. Individual User Shots Log
+            if "user_shots" in tables:
                 st.markdown("---")
-                st.subheader("🏌️ Club Distances & Bag Performance")
-                df_clubs = conn.execute("SELECT club_name, category, avg_m, max_m, est_carry_m FROM garmin_official_clubs").df()
-                df_clubs.columns = ['Club Name', 'Category', 'Avg Distance (m)', 'Max Distance (m)', 'Est Carry (m)']
-                st.dataframe(df_clubs, use_container_width=True)
+                st.subheader("🎯 Shot-by-Shot Tracking (`user_shots`)")
+                df_shots = conn.execute("SELECT * FROM user_shots ORDER BY date DESC, hole_num ASC, shot_order ASC").df()
+                if not df_shots.empty:
+                    st.dataframe(df_shots, use_container_width=True)
+                else:
+                    st.info("No recorded individual shot lines in `user_shots` yet.")
+            
+            # 3. Round Insights
+            if "round_insights" in tables:
+                st.markdown("---")
+                st.subheader("💡 Round Insights & Highlights")
+                df_ri = conn.execute("SELECT * FROM round_insights ORDER BY date DESC").df()
+                st.dataframe(df_ri, use_container_width=True)
                 
             conn.close()
         except Exception as e:
-            st.error(f"Error loading dashboard metrics: {e}")
-    else:
-        st.info("💡 `golf.duckdb` file not found.")
+            st.error(f"Error loading post-round details: {e}")
 
 # ==========================================
-# PAGE 2: WHS & HNA CALCULATOR
+# PAGE 3: CLUB DISTANCES & BAG STATS
+# ==========================================
+elif page == "🏌️ Club Distances & Bag Stats":
+    st.header("🏌️ Club Distances & Bag Yardages")
+    
+    conn = get_db_connection()
+    if conn:
+        try:
+            tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if "garmin_official_clubs" in tables:
+                    st.subheader("📱 Garmin Official Club Distances")
+                    df_garmin = conn.execute("SELECT club_name, category, avg_m, max_m, est_carry_m FROM garmin_official_clubs").df()
+                    st.dataframe(df_garmin, use_container_width=True)
+            
+            with col2:
+                if "club_stats" in tables:
+                    st.subheader("⚙️ Custom Club & Partial Swing Mapping (`club_stats`)")
+                    df_cs = conn.execute("SELECT * FROM club_stats").df()
+                    
+                    # Parse raw JSON if available
+                    parsed_clubs = []
+                    for _, row in df_cs.iterrows():
+                        if 'raw_json' in row and pd.notna(row['raw_json']):
+                            try:
+                                c_data = json.loads(row['raw_json'])
+                                parsed_clubs.append({
+                                    "Club Name": c_data.get("name", "Unknown"),
+                                    "Avg Distance": c_data.get("averageDistance", 0),
+                                    "Advice Distance": c_data.get("adviceDistance", 0),
+                                    "Retired": c_data.get("retired", False)
+                                })
+                            except:
+                                pass
+                    if parsed_clubs:
+                        st.dataframe(pd.DataFrame(parsed_clubs), use_container_width=True)
+                    else:
+                        st.dataframe(df_cs, use_container_width=True)
+                        
+            conn.close()
+        except Exception as e:
+            st.error(f"Error loading club statistics: {e}")
+
+# ==========================================
+# PAGE 4: WHS & HNA CALCULATOR
 # ==========================================
 elif page == "🧮 WHS & HNA Calculator":
     st.header("🧮 WHS & HNA Handicap Calculator")
@@ -94,7 +181,7 @@ elif page == "🧮 WHS & HNA Calculator":
         st.success(f"**Score Differential:** `{differential:.1f}`")
 
 # ==========================================
-# PAGE 3: PRE-ROUND CADDIE
+# PAGE 5: PRE-ROUND CADDIE
 # ==========================================
 elif page == "⛳ Pre-Round Caddie":
     st.header("⛳ Pre-Round Caddie & Course Strategy")
@@ -109,10 +196,9 @@ elif page == "⛳ Pre-Round Caddie":
         blueprint = None
         matched_name = None
         
-        # 1. Local Database Match First
-        if os.path.exists(DB_FILE):
+        conn = get_db_connection()
+        if conn:
             try:
-                conn = duckdb.connect(DB_FILE, read_only=True)
                 words = c_clean.split()
                 first_word = words[0] if words else ""
                 
@@ -134,7 +220,6 @@ elif page == "⛳ Pre-Round Caddie":
             except Exception as db_err:
                 st.warning(f"Local DB query skipped: {db_err}")
         
-        # 2. AI Search Fallback
         if not blueprint:
             ai_search_term = raw_query if any(loc in c_clean for loc in ['south africa', 'sa', 'usa', 'uk', 'scotland', 'australia']) else f"{raw_query}, South Africa"
             st.info(f"🔍 Searching Gemini AI Engine for '{ai_search_term}'...")
@@ -162,7 +247,6 @@ elif page == "⛳ Pre-Round Caddie":
                 except Exception as e:
                     st.error(f"❌ Could not retrieve scorecard via AI: {e}")
         
-        # 3. Strategy Presentation
         if blueprint:
             st.markdown("---")
             st.subheader("🎯 Strategy Game Plan (8.3 Handicap)")
