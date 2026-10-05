@@ -12,34 +12,39 @@ if page == "⛳ Pre-Round Caddie":
     st.header("⛳ Pre-Round Caddie & Course Strategy")
     st.markdown("Plan your target holes, bag mapping, and danger zones before stepping on the 1st tee.")
     
-    conn = duckdb.connect("golf.duckdb", read_only=True)
-    
     search_c = st.text_input("🔍 Search Course Name (e.g. Parkview, Houghton, Blair Atholl):", placeholder="Enter course name...")
     
     if search_c:
         raw_query = search_c.strip()
         c_clean = raw_query.lower()
         
-        # 1. Word-level matching for Database (e.g. 'parkview' matches 'Parkview Golf Club')
-        words = c_clean.split()
-        first_word = words[0] if words else ""
-        
+        # 1. Safe, isolated local database lookup
         cached = None
-        if len(first_word) > 2:
-            param = f"%{first_word}%"
-            cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (param,)).fetchone()
-        
-        if not cached:
-            param = f"%{c_clean}%"
-            cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (param,)).fetchone()
+        if os.path.exists("golf.duckdb"):
+            try:
+                conn = duckdb.connect("golf.duckdb", read_only=True)
+                words = c_clean.split()
+                first_word = words[0] if words else ""
+                
+                if len(first_word) > 2:
+                    param = f"%{first_word}%"
+                    cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (param,)).fetchone()
+                
+                if not cached:
+                    param = f"%{c_clean}%"
+                    cached = conn.execute("SELECT course_name, holes FROM course_blueprints WHERE LOWER(course_name) LIKE ?", (param,)).fetchone()
+                
+                conn.close()
+            except Exception as db_err:
+                st.warning(f"Note: Database read warning ({db_err}).")
         
         blueprint = None
         if cached:
             matched_name, holes_json = cached
             blueprint = json.loads(holes_json)
-            st.success(f"✅ Loaded **{matched_name}** from your historical database!")
+            st.success(f"✅ Loaded **{matched_name}** directly from your historical database!")
         else:
-            # 2. Append 'South Africa' to Gemini search if no location is specified
+            # 2. Gemini AI fallback with South African location context
             ai_search_term = raw_query if any(loc in c_clean for loc in ['south africa', 'sa', 'usa', 'uk', 'scotland', 'australia']) else f"{raw_query}, South Africa"
             
             st.info(f"🔍 Searching Gemini AI Engine for '{ai_search_term}'...")
@@ -51,7 +56,7 @@ if page == "⛳ Pre-Round Caddie":
                 try:
                     import google.generativeai as genai
                     genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-3.8-flash')
+                    model = genai.GenerativeModel('gemini-1.5-flash')
                     
                     prompt = f"""
                     Find the official 18-hole golf scorecard for '{ai_search_term}' (White/Mens tees).
