@@ -16,29 +16,63 @@ page = st.sidebar.radio("Navigation", ["📊 Master Analytics Dashboard", "🧮 
 # ==========================================
 if page == "📊 Master Analytics Dashboard":
     st.header("📊 Master Analytics Dashboard")
-    st.markdown("Track performance metrics, historical scores, and trend analyses.")
+    st.markdown("Track performance metrics, historical scores, and club performance.")
 
     if os.path.exists(DB_FILE):
         try:
             conn = duckdb.connect(DB_FILE, read_only=True)
             tables = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
             
-            if tables:
-                st.success(f"📂 Found {len(tables)} table(s) in `golf.duckdb`: **{', '.join(tables)}**")
+            if "scorecards" in tables:
+                join_query = """
+                SELECT 
+                    s.id AS scorecard_id,
+                    s.start_time,
+                    s.course_name,
+                    s.total_score,
+                    r.longest_shot_m
+                FROM scorecards s
+                LEFT JOIN round_insights r ON CAST(s.id AS VARCHAR) = CAST(r.scorecard_id AS VARCHAR)
+                ORDER BY s.start_time DESC
+                """
+                df_rounds = conn.execute(join_query).df()
+                valid_scores = df_rounds[df_rounds['total_score'] > 0]
                 
-                # Display contents of each table found in database
-                for t_name in tables:
-                    st.subheader(f"📋 Table: `{t_name}`")
-                    df_table = conn.execute(f"SELECT * FROM \"{t_name}\"").df()
-                    st.dataframe(df_table, use_container_width=True)
-            else:
-                st.info("💡 `golf.duckdb` connected, but no tables were found inside.")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Total Logged Rounds", len(df_rounds))
+                if not valid_scores.empty:
+                    c2.metric("Avg Score", round(valid_scores['total_score'].mean(), 1))
+                    c3.metric("Best Score", int(valid_scores['total_score'].min()))
+                if 'longest_shot_m' in df_rounds.columns and not df_rounds['longest_shot_m'].dropna().empty:
+                    c4.metric("Longest Drive", f"{round(df_rounds['longest_shot_m'].max(), 1)}m")
+                
+                st.markdown("---")
+                st.subheader("⛳ Recent Rounds History")
+                
+                df_display = df_rounds.copy()
+                if 'start_time' in df_display.columns:
+                    df_display['Date'] = pd.to_datetime(df_display['start_time']).dt.strftime('%Y-%m-%d %H:%M')
+                df_display = df_display[['Date', 'course_name', 'total_score', 'longest_shot_m']].rename(
+                    columns={
+                        'course_name': 'Course Name',
+                        'total_score': 'Total Score',
+                        'longest_shot_m': 'Longest Drive (m)'
+                    }
+                )
+                st.dataframe(df_display, use_container_width=True)
             
+            if "garmin_official_clubs" in tables:
+                st.markdown("---")
+                st.subheader("🏌️ Club Distances & Bag Performance")
+                df_clubs = conn.execute("SELECT club_name, category, avg_m, max_m, est_carry_m FROM garmin_official_clubs").df()
+                df_clubs.columns = ['Club Name', 'Category', 'Avg Distance (m)', 'Max Distance (m)', 'Est Carry (m)']
+                st.dataframe(df_clubs, use_container_width=True)
+                
             conn.close()
         except Exception as e:
-            st.error(f"Error inspecting database: {e}")
+            st.error(f"Error loading dashboard metrics: {e}")
     else:
-        st.info("💡 No `golf.duckdb` file detected in the app directory.")
+        st.info("💡 `golf.duckdb` file not found.")
 
 # ==========================================
 # PAGE 2: WHS & HNA CALCULATOR
@@ -135,7 +169,6 @@ elif page == "⛳ Pre-Round Caddie":
             
             df_bp = pd.DataFrame(blueprint)
             if 'si' in df_bp.columns and 'par' in df_bp.columns:
-                # Force string numbers to integer types safely
                 df_bp['par'] = pd.to_numeric(df_bp['par'], errors='coerce').fillna(4).astype(int)
                 df_bp['si'] = pd.to_numeric(df_bp['si'], errors='coerce').fillna(18).astype(int)
                 if 'yardage' in df_bp.columns:
